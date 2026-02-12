@@ -1,0 +1,106 @@
+#!/command/with-contenv bash
+# generate-mdm-xml: 根据环境变量生成 /var/lib/cloudflare-warp/mdm.xml
+set -euo pipefail
+
+MDM_FILE="/var/lib/cloudflare-warp/mdm.xml"
+
+# 如果 MDM 未启用，跳过生成
+if [ "${WARP_MDM_ENABLED:-false}" != "true" ]; then
+  exit 0
+fi
+
+# 如果已有 mdm.xml（如用户手动挂载），保留不覆盖
+if [ -f "$MDM_FILE" ]; then
+  echo "Existing mdm.xml found, skipping generation (using mounted file)"
+  exit 0
+fi
+
+# 开始构建 XML
+cat > "$MDM_FILE" <<'EOF'
+<dict>
+EOF
+
+# 辅助函数：添加 string 类型参数
+add_string() {
+  local key="$1"
+  local value="$2"
+  if [ -n "$value" ]; then
+    echo "    <key>$key</key>" >> "$MDM_FILE"
+    echo "    <string>$value</string>" >> "$MDM_FILE"
+  fi
+}
+
+# 辅助函数：添加 boolean 类型参数
+add_boolean() {
+  local key="$1"
+  local value="$2"
+  if [ -n "$value" ]; then
+    echo "    <key>$key</key>" >> "$MDM_FILE"
+    if [ "$value" = "true" ]; then
+      echo "    <true/>" >> "$MDM_FILE"
+    else
+      echo "    <false/>" >> "$MDM_FILE"
+    fi
+  fi
+}
+
+# 辅助函数：添加 integer 类型参数
+add_integer() {
+  local key="$1"
+  local value="$2"
+  if [ -n "$value" ]; then
+    echo "    <key>$key</key>" >> "$MDM_FILE"
+    echo "    <integer>$value</integer>" >> "$MDM_FILE"
+  fi
+}
+
+# === Required for Zero Trust ===
+add_string "organization" "${WARP_ORG:-}"
+
+# === Required for DNS-only ===
+add_string "gateway_unique_id" "${WARP_GATEWAY_ID:-}"
+
+# === Organization parameters ===
+# Service Token 认证
+add_string "auth_client_id" "${WARP_AUTH_CLIENT_ID:-}"
+add_string "auth_client_secret" "${WARP_AUTH_CLIENT_SECRET:-}"
+
+# 服务模式: warp / doh / warp+doh / dot / warp+dot / proxy / tunnel_only / postureonly
+add_string "service_mode" "${WARP_SERVICE_MODE:-}"
+
+# 代理端口 (仅 proxy 模式)
+add_integer "proxy_port" "${WARP_PROXY_PORT:-}"
+
+# 隧道协议: masque / wireguard
+add_string "warp_tunnel_protocol" "${WARP_TUNNEL_PROTOCOL:-}"
+
+# 开关控制
+add_boolean "switch_locked" "${WARP_SWITCH_LOCKED:-}"
+add_integer "auto_connect" "${WARP_AUTO_CONNECT:-}"
+
+# 界面配置
+add_boolean "onboarding" "${WARP_ONBOARDING:-}"
+add_string "display_name" "${WARP_DISPLAY_NAME:-}"
+add_string "support_url" "${WARP_SUPPORT_URL:-}"
+
+# 高级选项
+add_boolean "enable_pmtud" "${WARP_ENABLE_PMTUD:-}"
+add_boolean "enable_post_quantum" "${WARP_ENABLE_POST_QUANTUM:-}"
+add_boolean "enable_netbt" "${WARP_ENABLE_NETBT:-}"
+
+# Endpoint 覆盖 (高级，通常不需要)
+add_string "override_api_endpoint" "${WARP_OVERRIDE_API_ENDPOINT:-}"
+add_string "override_doh_endpoint" "${WARP_OVERRIDE_DOH_ENDPOINT:-}"
+add_string "override_warp_endpoint" "${WARP_OVERRIDE_WARP_ENDPOINT:-}"
+
+# External Emergency Disconnect (高级)
+add_string "external_emergency_signal_url" "${WARP_EMERGENCY_SIGNAL_URL:-}"
+add_string "external_emergency_signal_fingerprint" "${WARP_EMERGENCY_SIGNAL_FINGERPRINT:-}"
+add_integer "external_emergency_signal_interval" "${WARP_EMERGENCY_SIGNAL_INTERVAL:-}"
+
+# 结束 XML
+cat >> "$MDM_FILE" <<'EOF'
+</dict>
+EOF
+
+echo "MDM configuration generated at $MDM_FILE"

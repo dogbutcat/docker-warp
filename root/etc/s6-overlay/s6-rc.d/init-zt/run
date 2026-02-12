@@ -1,0 +1,5 @@
+#!/command/with-contenv bash
+
+if [ ! -f "/var/lib/zerotier-one/zerotier-cli" ]; then
+  cp -r /var/lib/zerotier-one.bak/ /var/lib/zerotier-one/
+fi

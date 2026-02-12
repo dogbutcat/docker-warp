@@ -1,0 +1,64 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+WARP_MDM_ENABLED="${WARP_MDM_ENABLED:-false}"
+WARP_MODE="${WARP_MODE:-proxy}"
+WARP_PROXY_PORT="${WARP_PROXY_PORT:-1080}"
+WARP_LICENSE_KEY="${WARP_LICENSE_KEY:-}"
+
+# Wait for warp-svc to accept commands.
+for i in $(seq 1 60); do
+  if warp-cli --accept-tos status >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+if ! warp-cli --accept-tos status >/dev/null 2>&1; then
+  echo "warp-cli is not ready"
+  exit 1
+fi
+
+# MDM 模式：由 mdm.xml 控制注册和配置，无需额外操作
+if [ "$WARP_MDM_ENABLED" = "true" ]; then
+  echo "MDM deployment mode enabled, configuration managed by mdm.xml"
+  # 等待 MDM 自动注册完成
+  for i in $(seq 1 30); do
+    if warp-cli --accept-tos registration show >/dev/null 2>&1; then
+      echo "MDM registration successful"
+      warp-cli --accept-tos connect
+      exit 0
+    fi
+    sleep 2
+  done
+  echo "MDM registration pending, please check your service token configuration"
+  exit 0
+fi
+
+# LICENSE_KEY 模式：手动注册
+if [ -n "$WARP_LICENSE_KEY" ]; then
+  if ! warp-cli --accept-tos registration show >/dev/null 2>&1; then
+    warp-cli --accept-tos registration new
+  fi
+  warp-cli --accept-tos registration license "$WARP_LICENSE_KEY"
+
+  case "$WARP_MODE" in
+    proxy)
+      warp-cli --accept-tos proxy port "$WARP_PROXY_PORT"
+      warp-cli --accept-tos mode proxy
+      ;;
+    warp|doh|warp+doh|dot|warp+dot|tunnel_only)
+      warp-cli --accept-tos mode "$WARP_MODE"
+      ;;
+    *)
+      echo "Unsupported WARP_MODE: $WARP_MODE"
+      echo "Valid: warp / doh / warp+doh / dot / warp+dot / proxy / tunnel_only"
+      exit 1
+      ;;
+  esac
+
+  warp-cli --accept-tos connect
+else
+  echo "No WARP_LICENSE_KEY or MDM provided, skipping auto-registration."
+  echo "Please register manually via warp-taskbar or warp-cli."
+fi

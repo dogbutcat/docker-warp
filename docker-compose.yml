@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  warp:
+    image: dogbutcat/warp
+    container_name: warp
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # 以下为固定值，WARP 相关配置请写在 .env 文件中
+      - PUID=0
+      - PGID=0
+      - USER=root
+      - TZ=Asia/Shanghai
+      # ========== 部署方式 A: LICENSE_KEY (个人 / WARP+) ==========
+      # - WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
+      # - WARP_MODE=proxy                 # warp / doh / warp+doh / dot / warp+dot / proxy / tunnel_only
+      # - WARP_PROXY_PORT=1080
+      # ========== 部署方式 B: MDM (Zero Trust / Service Token) ==========
+      # 主开关 - 设为 true 启用 MDM 部署
+      # - WARP_MDM_ENABLED=true
+      # --- 必填参数 ---
+      # - WARP_ORG=your-team-name
+      # - WARP_AUTH_CLIENT_ID=xxxx.access
+      # - WARP_AUTH_CLIENT_SECRET=xxxx
+      # --- 服务模式 ---
+      # - WARP_SERVICE_MODE=warp          # warp / doh / warp+doh / dot / warp+dot / proxy / tunnel_only / postureonly
+      # - WARP_PROXY_PORT=1080            # 仅 proxy 模式
+      # - WARP_TUNNEL_PROTOCOL=masque     # masque / wireguard
+      # --- 开关控制 ---
+      # - WARP_SWITCH_LOCKED=true         # 锁定开关，用户无法断开
+      # - WARP_AUTO_CONNECT=0             # 自动重连间隔 (0-1440 分钟)
+      # --- 界面配置 ---
+      # - WARP_ONBOARDING=false           # 隐私政策引导页
+      # - WARP_DISPLAY_NAME=MyOrg         # GUI 显示名称
+      # - WARP_SUPPORT_URL=https://help.example.com
+      # --- DNS-only 模式 ---
+      # - WARP_GATEWAY_ID=your-doh-subdomain
+      # --- 高级选项 ---
+      # - WARP_ENABLE_PMTUD=false         # Path MTU Discovery
+      # - WARP_ENABLE_POST_QUANTUM=true   # 后量子加密
+      # - WARP_ENABLE_NETBT=false         # NetBIOS over TCP/IP
+      # --- Endpoint 覆盖 (中国网络等特殊场景) ---
+      # - WARP_OVERRIDE_API_ENDPOINT=1.2.3.4
+      # - WARP_OVERRIDE_DOH_ENDPOINT=1.2.3.4
+      # - WARP_OVERRIDE_WARP_ENDPOINT=203.0.113.0:500
+      # --- External Emergency Disconnect ---
+      # - WARP_EMERGENCY_SIGNAL_URL=https://192.0.2.1:3333/status/disconnect
+      # - WARP_EMERGENCY_SIGNAL_FINGERPRINT=DD4F4806C57A...
+      # - WARP_EMERGENCY_SIGNAL_INTERVAL=300
+      # ========== 其他可选 ==========
+      # - ZT=true
+    ports:
+      - "3000:3000"
+    volumes:
+      - home:/config
+      - warp-data:/var/lib/cloudflare-warp
+      - zerotier:/var/lib/zerotier-one
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    shm_size: "1gb"
+
+volumes:
+  home:
+  warp-data:
+  zerotier:

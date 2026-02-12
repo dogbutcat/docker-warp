@@ -1,0 +1,62 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+
+# Linux
+*~
+
+# Logs
+logs/
+*.log
+*.out
+*.err
+
+# Environment files
+.env
+.env.*
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+*.pid
+*.seed
+docker-compose.override.yml
+.docker/
+.tmp/
+
+# Git
+*.orig
+
+# Coverage / Reports
+coverage/
+*.lcov
+
+# Compiled code
+*.o
+*.so
+*.a
+*.dll
+*.exe
+*.class
+
+# Backup files
+*.bak
+*.tmp
+*.temp

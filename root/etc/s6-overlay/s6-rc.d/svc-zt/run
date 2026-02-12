@@ -1,0 +1,9 @@
+#!/command/with-contenv bash
+
+# 默认不启动
+if [ "${ZT}" != "true" ]; then
+  exit 0
+fi
+
+echo "Starting ZeroTier One..."
+exec /usr/sbin/zerotier-one -U
