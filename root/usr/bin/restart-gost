@@ -1,0 +1,7 @@
+#!/command/with-contenv bash
+# 手动重启 gost 代理服务
+# 用法: docker exec <container> restart-gost
+
+echo "Restarting gost..."
+/command/s6-svc -r /run/service/svc-gost
+echo "gost restarted"

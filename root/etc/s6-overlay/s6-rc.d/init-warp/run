@@ -3,8 +3,34 @@ set -euo pipefail
 
 WARP_MDM_ENABLED="${WARP_MDM_ENABLED:-false}"
 WARP_MODE="${WARP_MODE:-proxy}"
+WARP_SERVICE_MODE="${WARP_SERVICE_MODE:-}"
 WARP_PROXY_PORT="${WARP_PROXY_PORT:-40000}"
 WARP_LICENSE_KEY="${WARP_LICENSE_KEY:-}"
+
+# 判断是否需要 proxy 端口就绪
+is_proxy_mode() {
+  [ "$WARP_MODE" = "proxy" ] || [ "$WARP_SERVICE_MODE" = "proxy" ]
+}
+
+# connect 后等待 proxy 端口就绪
+wait_proxy_ready() {
+  if ! is_proxy_mode; then
+    return 0
+  fi
+  echo "Waiting for WARP proxy port ${WARP_PROXY_PORT} to be ready..."
+  local n=0
+  while true; do
+    if (echo > /dev/tcp/127.0.0.1/${WARP_PROXY_PORT}) 2>/dev/null; then
+      echo "WARP proxy port ${WARP_PROXY_PORT} is ready"
+      return 0
+    fi
+    n=$((n + 1))
+    if [ $((n % 30)) -eq 0 ]; then
+      echo "Still waiting for WARP proxy port ${WARP_PROXY_PORT}... (${n}s)"
+    fi
+    sleep 1
+  done
+}
 
 # Wait for warp-svc to accept commands.
 for i in $(seq 1 60); do
@@ -27,6 +53,7 @@ if [ "$WARP_MDM_ENABLED" = "true" ]; then
     if echo "$REG_STATUS" | grep -qi "organization\|account\|team"; then
       echo "MDM registration successful"
       warp-cli --accept-tos connect
+      wait_proxy_ready
       exit 0
     fi
     echo "Waiting for MDM registration... (${i}/90)"
@@ -60,6 +87,7 @@ if [ -n "$WARP_LICENSE_KEY" ]; then
   esac
 
   warp-cli --accept-tos connect
+  wait_proxy_ready
 else
   echo "No WARP_LICENSE_KEY or MDM provided, skipping auto-registration."
   echo "Register manually: docker exec <container> warp-cli --accept-tos registration new"

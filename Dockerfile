@@ -31,7 +31,7 @@ RUN set -eux; \
     echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
       > /etc/apt/sources.list.d/cloudflare-warp.list; \
     apt-get update; \
-    apt-get install -y --no-install-recommends cloudflare-warp dbus; \
+    apt-get install -y --no-install-recommends cloudflare-warp dbus iptables iproute2; \
     apt-get clean; rm -rf /var/lib/apt/lists/*
 
 # ---------- gost v3 (SOCKS5 / Shadowsocks) ----------
@@ -43,7 +43,7 @@ RUN set -eux; \
     rm -f /tmp/gost /tmp/gost.tar.gz
 
 COPY root /
-RUN chmod +x /usr/bin/generate-mdm-xml && \
+RUN chmod +x /usr/bin/generate-mdm-xml /usr/bin/restart-gost && \
     find /etc/s6-overlay/s6-rc.d -name "run" -exec chmod +x {} \;
 
 EXPOSE 1080
@@ -93,5 +93,10 @@ ENV WARP_OVERRIDE_WARP_ENDPOINT=
 ENV WARP_EMERGENCY_SIGNAL_URL=
 ENV WARP_EMERGENCY_SIGNAL_FINGERPRINT=
 ENV WARP_EMERGENCY_SIGNAL_INTERVAL=
+
+# === 网关模式 ===
+ENV GATEWAY_MODE=false
+# 需要路由到 WARP 隧道的目标网段，逗号分隔 (例: 10.143.0.0/16,172.16.0.0/12)
+ENV GATEWAY_ROUTES=
 
 ENTRYPOINT ["/init"]

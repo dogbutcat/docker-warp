@@ -1,0 +1,63 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+GATEWAY_MODE="${GATEWAY_MODE:-false}"
+GATEWAY_ROUTES="${GATEWAY_ROUTES:-}"
+
+if [ "$GATEWAY_MODE" != "true" ]; then
+  echo "Gateway mode disabled, skipping"
+  exit 0
+fi
+
+# === 1. 开启内核 IP 转发 ===
+echo 1 > /proc/sys/net/ipv4/ip_forward
+echo "IP forwarding enabled"
+
+# === 2. 等待 CloudflareWARP 接口就绪 ===
+echo "Waiting for CloudflareWARP interface..."
+for i in $(seq 1 60); do
+  if ip link show CloudflareWARP >/dev/null 2>&1; then
+    echo "CloudflareWARP interface is up"
+    break
+  fi
+  sleep 2
+done
+
+if ! ip link show CloudflareWARP >/dev/null 2>&1; then
+  echo "ERROR: CloudflareWARP interface not found after 120s"
+  echo "Gateway mode requires WARP in tunnel mode (warp / warp+doh / warp+dot)"
+  exit 1
+fi
+
+# === 3. 添加用户指定的目标网段路由 ===
+# GATEWAY_ROUTES 格式: 逗号分隔的 CIDR，例如 "10.143.0.0/16,172.16.0.0/12"
+# 未声明则跳过路由添加（依赖 WARP 自身路由表）
+if [ -n "$GATEWAY_ROUTES" ]; then
+  IFS=',' read -ra ROUTES <<< "$GATEWAY_ROUTES"
+  for route in "${ROUTES[@]}"; do
+    route=$(echo "$route" | xargs)  # trim whitespace
+    if [ -n "$route" ]; then
+      if ip route add "$route" dev CloudflareWARP 2>/dev/null; then
+        echo "Route added: $route -> CloudflareWARP"
+      else
+        echo "Route skipped (already exists or invalid): $route"
+      fi
+    fi
+  done
+else
+  echo "No GATEWAY_ROUTES specified, relying on WARP's own routing table"
+fi
+
+# === 4. iptables NAT + 转发规则 ===
+# 出口 MASQUERADE：只指定出口接口 CloudflareWARP，入口接口无关
+iptables -t nat -A POSTROUTING -o CloudflareWARP -j MASQUERADE
+
+# 仅放行与 CloudflareWARP 相关的转发，不改变默认策略
+# 用 -I 插入到链头部，避免被 Docker/UFW 等已有规则拦截
+iptables -I FORWARD -o CloudflareWARP -j ACCEPT
+iptables -I FORWARD -i CloudflareWARP -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+echo "Gateway mode enabled: NAT on CloudflareWARP"
+if [ -n "$GATEWAY_ROUTES" ]; then
+  echo "Custom routes: ${GATEWAY_ROUTES}"
+fi

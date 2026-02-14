@@ -53,6 +53,11 @@ services:
       # - WARP_EMERGENCY_SIGNAL_URL=https://192.0.2.1:3333/status/disconnect
       # - WARP_EMERGENCY_SIGNAL_FINGERPRINT=DD4F4806C57A...
       # - WARP_EMERGENCY_SIGNAL_INTERVAL=300
+      # ========== 网关模式 (LAN Gateway) ==========
+      # 主开关 - 设为 true 启用网关转发功能
+      # - GATEWAY_MODE=true
+      # 需要路由到 WARP 隧道的目标网段 (逗号分隔，不填则依赖 WARP 自身路由表)
+      # - GATEWAY_ROUTES=10.143.0.0/16,172.16.0.0/12
     ports:
       - "${PROXY_PORT:-1080}:${PROXY_PORT:-1080}"
       # Shadowsocks 端口 (socks5+ss 模式时取消注释)
