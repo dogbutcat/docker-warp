@@ -16,6 +16,7 @@ if [ -f "$MDM_FILE" ]; then
 fi
 
 # 开始构建 XML
+mkdir -p "$(dirname "$MDM_FILE")"
 cat > "$MDM_FILE" <<'EOF'
 <dict>
 EOF
@@ -68,8 +69,8 @@ add_string "auth_client_secret" "${WARP_AUTH_CLIENT_SECRET:-}"
 # 服务模式: warp / doh / warp+doh / dot / warp+dot / proxy / tunnel_only / postureonly
 add_string "service_mode" "${WARP_SERVICE_MODE:-}"
 
-# 代理端口 (仅 proxy 模式)
-add_integer "proxy_port" "${WARP_PROXY_PORT:-}"
+# 代理端口 (WARP 内部监听，外部通过 gost 暴露)
+add_integer "proxy_port" "${WARP_PROXY_PORT:-40000}"
 
 # 隧道协议: masque / wireguard
 add_string "warp_tunnel_protocol" "${WARP_TUNNEL_PROTOCOL:-}"

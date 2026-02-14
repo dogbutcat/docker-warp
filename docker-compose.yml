@@ -8,15 +8,19 @@ services:
     env_file:
       - .env
     environment:
-      # 以下为固定值，WARP 相关配置请写在 .env 文件中
-      - PUID=0
-      - PGID=0
-      - USER=root
+      # 以下为固定值，其余配置请写在 .env 文件中
       - TZ=Asia/Shanghai
       # ========== 部署方式 A: LICENSE_KEY (个人 / WARP+) ==========
       # - WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
       # - WARP_MODE=proxy                 # warp / doh / warp+doh / dot / warp+dot / proxy / tunnel_only
-      # - WARP_PROXY_PORT=1080
+      # - WARP_PROXY_PORT=40000            # WARP proxy 模式内部监听端口
+      # ========== 代理配置 ==========
+      # - PROXY_TYPE=socks5               # socks5 / ss / socks5+ss
+      # - PROXY_PORT=1080                 # 外部代理端口
+      # --- Shadowsocks (仅 ss / socks5+ss 模式) ---
+      # - SS_PASSWORD=your-password       # SS 密码 (必填)
+      # - SS_METHOD=chacha20-ietf-poly1305  # SS 加密方式
+      # - SS_PORT=8388                    # SS 端口 (仅 socks5+ss 模式)
       # ========== 部署方式 B: MDM (Zero Trust / Service Token) ==========
       # 主开关 - 设为 true 启用 MDM 部署
       # - WARP_MDM_ENABLED=true
@@ -26,7 +30,7 @@ services:
       # - WARP_AUTH_CLIENT_SECRET=xxxx
       # --- 服务模式 ---
       # - WARP_SERVICE_MODE=warp          # warp / doh / warp+doh / dot / warp+dot / proxy / tunnel_only / postureonly
-      # - WARP_PROXY_PORT=1080            # 仅 proxy 模式
+      # - WARP_PROXY_PORT=40000            # WARP proxy 模式内部监听端口
       # - WARP_TUNNEL_PROTOCOL=masque     # masque / wireguard
       # --- 开关控制 ---
       # - WARP_SWITCH_LOCKED=true         # 锁定开关，用户无法断开
@@ -49,22 +53,12 @@ services:
       # - WARP_EMERGENCY_SIGNAL_URL=https://192.0.2.1:3333/status/disconnect
       # - WARP_EMERGENCY_SIGNAL_FINGERPRINT=DD4F4806C57A...
       # - WARP_EMERGENCY_SIGNAL_INTERVAL=300
-      # ========== 其他可选 ==========
-      # - ZT=true
     ports:
-      - "3000:3000"
-    volumes:
-      - home:/config
-      - warp-data:/var/lib/cloudflare-warp
-      - zerotier:/var/lib/zerotier-one
+      - "${PROXY_PORT:-1080}:${PROXY_PORT:-1080}"
+      # Shadowsocks 端口 (socks5+ss 模式时取消注释)
+      # - "${SS_PORT:-8388}:${SS_PORT:-8388}"
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
     devices:
       - /dev/net/tun:/dev/net/tun
-    shm_size: "1gb"
-
-volumes:
-  home:
-  warp-data:
-  zerotier:

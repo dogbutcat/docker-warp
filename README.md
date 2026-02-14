@@ -4,76 +4,117 @@
 
 | 日期 | 变更内容 | 原因 |
 |------|---------|------|
-| 2026-02-12 11:30 | 新增 `.env.example`，compose 改用 `env_file` 引用，支持 Portainer 导入 | 环境变量管理更清晰 |
-| 2026-02-12 11:00 | 移除无效 `WARP_ACCEPT_TOS`，容器内 `--accept-tos` 已硬编码 | 该变量未实际生效，清理冗余 |
+| 2026-02-13 16:00 | v2.0 重构: 移除 GUI/VNC/ZeroTier，基于 debian:bookworm-slim + s6-overlay；新增 gost 代理层，支持 SOCKS5/Shadowsocks 外部代理 | 精简为纯 CLI 容器，减小镜像体积，增加标准代理协议支持 |
+| 2026-02-12 11:30 | 新增 `.env.example`，compose 改用 `env_file` 引用 | 环境变量管理更清晰 |
 | 2026-02-12 10:30 | 新增 MDM 部署模式，支持 Service Token headless 部署 | 企业级 Zero Trust 场景支持 |
-| 2026-02-11 12:58 | 级回 warp-taskbar，接受 GUI 回调部分错误但保持基本使用 | CLI 一把抓不简洁 |
-| 2026-02-11 12:19 | 禁用 GUI 登录回调，改为纯 CLI 方式（License Key / 命令行注册） | GUI 回调注册无法跨越容器边界 (reverted) |
-| 2026-02-11 10:55 | 增加 WARP TOS 自动接受开关 `WARP_ACCEPT_TOS` | 修复启动时报错提示接受条款 |
-| 2026-02-11 10:40 | 切换为 Cloudflare WARP，补充 D-Bus、s6 服务、WARP 环境变量与数据持久化 | 执行重构计划 |
 
-基于 [dogbutcat/kasmvnc:ubuntunoble](https://github.com/dogbutcat/docker-kasmvnc) 基础镜像，集成 Cloudflare WARP，并保留 KasmVNC Desktop 与 ZeroTier。
+纯 CLI 容器，基于 `debian:bookworm-slim` + s6-overlay，集成 Cloudflare WARP + gost 代理。
 
-> 使用 TUN 模式需要在宿主机启用 `net.ipv4.ip_forward=1`（写入 `/etc/sysctl.conf`）
+支持两种工作模式：
+- **裸代理模式**：不配置 WARP，gost 作为独立 SOCKS5/SS 代理，流量从服务器 IP 直出
+- **WARP 代理模式**：配置 WARP 后，流量经 Cloudflare 网络出去
+
+**WARP 模式架构**: 外部客户端 → gost (SOCKS5/SS) → warp-svc → Cloudflare 网络
 
 ## 快速开始
 
+### 裸代理 (不走 WARP)
+
 ```bash
 cp .env.example .env
-# 编辑 .env，取消注释并填入你的配置
+# 按需修改 PROXY_TYPE / PROXY_PORT 等
 docker compose up -d
 ```
 
-Portainer 用户可直接在 Stack 配置界面点击 **Load variables from .env file** 导入 `.env.example`。
+### 走 WARP (LICENSE_KEY)
 
-## 部署方式
+```bash
+cp .env.example .env
+# 编辑 .env：
+#   WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
+#   WARP_MODE=proxy
+docker compose up -d
+```
 
-支持两种部署方式，根据使用场景选择：
+默认暴露 SOCKS5 代理在 `1080` 端口。
 
-| 方式 | 适用场景 | 主要配置 |
-|------|---------|---------|
-| **LICENSE_KEY** | 个人 / WARP+ | `WARP_LICENSE_KEY` |
-| **MDM** | 企业 / Zero Trust / Service Token | `WARP_MDM_ENABLED=true` + MDM 参数 |
+## 代理模式
 
----
+通过 `PROXY_TYPE` 环境变量切换，所有配置均通过 `.env` 文件管理。
 
-## 方式一：LICENSE_KEY 部署 (个人)
+### SOCKS5 (默认)
 
-### 环境变量
+```bash
+# .env
+WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
+PROXY_TYPE=socks5
+PROXY_PORT=1080
+```
+
+验证:
+```bash
+curl -x socks5h://127.0.0.1:1080 https://www.cloudflare.com/cdn-cgi/trace
+```
+
+### Shadowsocks
+
+```bash
+# .env
+WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
+PROXY_TYPE=ss
+PROXY_PORT=8388
+SS_PASSWORD=your-strong-password
+SS_METHOD=chacha20-ietf-poly1305
+```
+
+客户端连接: `ss://chacha20-ietf-poly1305:your-strong-password@<host>:8388`
+
+### SOCKS5 + Shadowsocks 同时开启
+
+```bash
+# .env
+WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
+PROXY_TYPE=socks5+ss
+PROXY_PORT=1080       # SOCKS5 端口
+SS_PORT=8388          # Shadowsocks 端口
+SS_PASSWORD=your-strong-password
+SS_METHOD=chacha20-ietf-poly1305
+```
+
+需要在 `docker-compose.yml` 中同时映射两个端口:
+```yaml
+ports:
+  - "1080:1080"
+  - "8388:8388"
+```
+
+## 环境变量
+
+### 代理配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `PROXY_TYPE` | `socks5` | 代理类型: `socks5` / `ss` / `socks5+ss` |
+| `PROXY_PORT` | `1080` | 外部代理端口 |
+| `SS_PASSWORD` | - | Shadowsocks 密码 (ss/socks5+ss 必填) |
+| `SS_METHOD` | `chacha20-ietf-poly1305` | SS 加密方式 |
+| `SS_PORT` | `8388` | SS 端口 (仅 socks5+ss 模式) |
+
+### WARP 配置
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `WARP_LICENSE_KEY` | - | WARP+ 许可证密钥 |
-| `WARP_MODE` | `proxy` | 工作模式：`warp` / `doh` / `warp+doh` / `dot` / `warp+dot` / `proxy` / `tunnel_only` |
-| `WARP_PROXY_PORT` | `1080` | 代理端口（仅 proxy 模式） |
-| `ZT` | `false` | 启用 ZeroTier |
+| `WARP_MODE` | - | LICENSE_KEY 模式的工作模式：`warp` / `doh` / `warp+doh` / `dot` / `warp+dot` / `proxy` / `tunnel_only`。不设置则不走 WARP |
+| `WARP_PROXY_PORT` | `40000` | WARP proxy 模式内部监听端口 (通常不需要改) |
 
-> 容器内所有 `warp-cli` 调用已自动附带 `--accept-tos`，无需额外配置。
-
-### 注册说明
-
-**推荐方式**：传入 `WARP_LICENSE_KEY` 环境变量（Cloudflare Zero Trust License），容器启动时自动注册并连接。
-
-**GUI 登录方式**：通过 KasmVNC 桌面启动的 taskbar 可点击登录按钮进行 SSO。此功能中回调注册会出现"Cannot register 'warp_cli' as browser callback"警告，这是容器隔离限制，但不影响 WARP 本身代理功能。
-
-手动 CLI 方式（无 License 时）：
-
-```bash
-docker exec warp warp-cli --accept-tos registration new
-docker exec warp warp-cli --accept-tos proxy port 1080
-docker exec warp warp-cli --accept-tos mode proxy
-docker exec warp warp-cli --accept-tos connect
-```
-
----
-
-## 方式二：MDM 部署 (企业 / Zero Trust)
+### MDM 部署 (企业 / Zero Trust)
 
 通过环境变量配置 MDM 参数，容器启动时自动生成 `/var/lib/cloudflare-warp/mdm.xml`。
 
 > **注意**：如果 volume 中已存在 `mdm.xml`（手动挂载或上次生成），脚本会跳过生成，直接使用已有文件。如需更新配置，请先删除已有的 `mdm.xml` 再重启容器。
 
-### 核心环境变量
+#### 核心环境变量
 
 | 变量 | 必填 | 说明 |
 |------|:----:|------|
@@ -82,24 +123,23 @@ docker exec warp warp-cli --accept-tos connect
 | `WARP_AUTH_CLIENT_ID` | ✓ | Service Token Client ID (格式: `xxx.access`) |
 | `WARP_AUTH_CLIENT_SECRET` | ✓ | Service Token Client Secret |
 
-### 可选环境变量
+#### 可选环境变量
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `WARP_SERVICE_MODE` | `warp` | 服务模式：`warp` / `doh` / `warp+doh` / `dot` / `warp+dot` / `proxy` / `tunnel_only` / `postureonly` |
-| `WARP_PROXY_PORT` | - | 代理端口（仅 `proxy` 模式需要） |
 | `WARP_TUNNEL_PROTOCOL` | `masque` | 隧道协议：`masque` / `wireguard` |
 | `WARP_SWITCH_LOCKED` | `false` | 锁定开关，用户无法手动断开 |
 | `WARP_AUTO_CONNECT` | - | 自动重连间隔 (0-1440 分钟) |
 | `WARP_ONBOARDING` | `true` | 显示隐私政策引导页 |
-| `WARP_DISPLAY_NAME` | - | GUI 显示名称 |
+| `WARP_DISPLAY_NAME` | - | 显示名称 |
 | `WARP_SUPPORT_URL` | - | 支持链接 (https:// 或 mailto:) |
 | `WARP_GATEWAY_ID` | - | DoH subdomain (DNS-only 模式) |
 | `WARP_ENABLE_PMTUD` | `false` | Path MTU Discovery |
 | `WARP_ENABLE_POST_QUANTUM` | - | 后量子加密 |
 | `WARP_ENABLE_NETBT` | `false` | NetBIOS over TCP/IP (Windows 兼容) |
 
-### 高级环境变量 (通常不需要)
+#### 高级环境变量 (通常不需要)
 
 | 变量 | 说明 |
 |------|------|
@@ -110,7 +150,7 @@ docker exec warp warp-cli --accept-tos connect
 | `WARP_EMERGENCY_SIGNAL_FINGERPRINT` | Emergency Signal 证书指纹 (SHA-256) |
 | `WARP_EMERGENCY_SIGNAL_INTERVAL` | Emergency Signal 轮询间隔 (秒，最小 30) |
 
-### MDM 部署示例
+#### MDM 部署示例
 
 ```yaml
 services:
@@ -131,34 +171,21 @@ services:
 
 > **参考文档**: [Cloudflare MDM Parameters](https://developers.cloudflare.com/cloudflare-one/connections/connect-devices/warp/deployment/mdm-deployment/parameters/)
 
----
-
-## 通用配置
-
-- 以 root 用户运行（支持 TUN 模式）
-- WARP 数据目录：`/var/lib/cloudflare-warp/`
-- KasmVNC 配置目录：`/config/`
-- 可选 ZeroTier：环境变量 `ZT=true` 开启
-
 ## Build
 
 ```bash
 docker buildx build --platform linux/amd64 -t local/warp .
 ```
 
-## 验证
+## 手动注册 (无 License Key)
 
-状态检查：
+```bash
+docker exec warp warp-cli --accept-tos registration new
+docker exec warp warp-cli --accept-tos connect
+```
+
+## 状态检查
 
 ```bash
 docker exec warp warp-cli --accept-tos status
 ```
-
-代理测试：
-
-```bash
-# proxy 模式
-curl -x socks5h://127.0.0.1:1080 https://www.cloudflare.com/cdn-cgi/trace
-```
-
-返回内容包含 `warp=on` 即表示代理模式可用。

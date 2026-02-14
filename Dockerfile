@@ -1,42 +1,66 @@
-FROM dogbutcat/kasmvnc:ubuntunoble
+FROM debian:bookworm-slim
 
-# ZeroTier
-RUN curl -s https://install.zerotier.com | bash
-RUN cp -r /var/lib/zerotier-one/ /var/lib/zerotier-one.bak/
+SHELL ["/bin/bash", "-c"]
 
-# Cloudflare WARP
-RUN apt-get update && \
+ARG TARGETARCH
+ARG S6_OVERLAY_VERSION=3.2.2.0
+ARG GOST_VERSION=3.2.6
+
+# ---------- s6-overlay ----------
+RUN set -eux; \
+    apt-get update; \
     apt-get install -y --no-install-recommends \
-      curl \
-      dbus \
-      firefox \
-      gnupg \
-      lsb-release \
-      xdg-desktop-portal \
-      xdg-desktop-portal-gtk \
-      xdg-utils && \
-    mkdir -p /usr/share/keyrings && \
-    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && \
+      ca-certificates curl gnupg lsb-release wget xz-utils; \
+    case "${TARGETARCH}" in \
+      amd64) S6_ARCH="x86_64" ;; \
+      arm64) S6_ARCH="aarch64" ;; \
+      *)     echo "Unsupported: ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    wget -qO /tmp/s6-noarch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz"; \
+    tar -C / -Jxpf /tmp/s6-noarch.tar.xz; \
+    wget -qO /tmp/s6-arch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz"; \
+    tar -C / -Jxpf /tmp/s6-arch.tar.xz; \
+    rm /tmp/s6-*.tar.xz
+
+# ---------- Cloudflare WARP ----------
+RUN set -eux; \
+    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg \
+      | gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg; \
     echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
-      > /etc/apt/sources.list.d/cloudflare-warp.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends cloudflare-warp && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+      > /etc/apt/sources.list.d/cloudflare-warp.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends cloudflare-warp dbus; \
+    apt-get clean; rm -rf /var/lib/apt/lists/*
+
+# ---------- gost v3 (SOCKS5 / Shadowsocks) ----------
+RUN set -eux; \
+    wget -qO /tmp/gost.tar.gz \
+      "https://github.com/go-gost/gost/releases/download/v${GOST_VERSION}/gost_${GOST_VERSION}_linux_${TARGETARCH}.tar.gz"; \
+    tar -xzf /tmp/gost.tar.gz -C /tmp gost; \
+    install -m 755 /tmp/gost /usr/local/bin/gost; \
+    rm -f /tmp/gost /tmp/gost.tar.gz
 
 COPY root /
-RUN chmod +x /usr/bin/generate-mdm-xml
+RUN chmod +x /usr/bin/generate-mdm-xml && \
+    find /etc/s6-overlay/s6-rc.d -name "run" -exec chmod +x {} \;
 
-VOLUME "/var/lib/cloudflare-warp"
-VOLUME "/var/lib/zerotier-one"
+EXPOSE 1080
 
-EXPOSE 3000
+# === WARP 配置 ===
+ENV WARP_MODE=
+ENV WARP_LICENSE_KEY=
+ENV WARP_PROXY_PORT=40000
 
-# === 基础配置 ===
-ENV ZT=false
-ENV WARP_MODE=proxy
-ENV WARP_PROXY_PORT=1080
+# === 代理配置 ===
+ENV PROXY_TYPE=socks5
+ENV PROXY_PORT=1080
+ENV SS_PASSWORD=
+ENV SS_METHOD=chacha20-ietf-poly1305
+ENV SS_PORT=8388
 
-# === MDM 部署模式 (Service Token) ===
+# === MDM 部署 (企业 Zero Trust) ===
 # 主开关：设为 true 启用 MDM 部署，其他 MDM 参数才会生效
 ENV WARP_MDM_ENABLED=false
 # Zero Trust 组织名 (必填)
@@ -48,3 +72,26 @@ ENV WARP_AUTH_CLIENT_SECRET=
 ENV WARP_SERVICE_MODE=
 # 隧道协议: masque / wireguard
 ENV WARP_TUNNEL_PROTOCOL=
+# --- 开关控制 ---
+ENV WARP_SWITCH_LOCKED=
+ENV WARP_AUTO_CONNECT=
+# --- 界面配置 ---
+ENV WARP_ONBOARDING=
+ENV WARP_DISPLAY_NAME=
+ENV WARP_SUPPORT_URL=
+# --- DNS-only 模式 ---
+ENV WARP_GATEWAY_ID=
+# --- 高级选项 ---
+ENV WARP_ENABLE_PMTUD=
+ENV WARP_ENABLE_POST_QUANTUM=
+ENV WARP_ENABLE_NETBT=
+# --- Endpoint 覆盖 (中国网络等特殊场景) ---
+ENV WARP_OVERRIDE_API_ENDPOINT=
+ENV WARP_OVERRIDE_DOH_ENDPOINT=
+ENV WARP_OVERRIDE_WARP_ENDPOINT=
+# --- External Emergency Disconnect ---
+ENV WARP_EMERGENCY_SIGNAL_URL=
+ENV WARP_EMERGENCY_SIGNAL_FINGERPRINT=
+ENV WARP_EMERGENCY_SIGNAL_INTERVAL=
+
+ENTRYPOINT ["/init"]

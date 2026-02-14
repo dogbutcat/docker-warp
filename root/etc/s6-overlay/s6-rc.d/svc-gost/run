@@ -1,0 +1,50 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+PROXY_TYPE="${PROXY_TYPE:-socks5}"
+PROXY_PORT="${PROXY_PORT:-1080}"
+WARP_MODE="${WARP_MODE:-}"
+WARP_SERVICE_MODE="${WARP_SERVICE_MODE:-}"
+WARP_PROXY_PORT="${WARP_PROXY_PORT:-40000}"
+SS_PASSWORD="${SS_PASSWORD:-}"
+SS_METHOD="${SS_METHOD:-chacha20-ietf-poly1305}"
+SS_PORT="${SS_PORT:-8388}"
+
+echo "[DEBUG] PROXY_TYPE=${PROXY_TYPE} PROXY_PORT=${PROXY_PORT} WARP_MODE=${WARP_MODE} WARP_SERVICE_MODE=${WARP_SERVICE_MODE} SS_PORT=${SS_PORT}"
+
+# WARP_MODE=proxy (LICENSE_KEY) 或 WARP_SERVICE_MODE=proxy (MDM) 时转发到 warp-svc
+FORWARD=""
+if [ "$WARP_MODE" = "proxy" ] || [ "$WARP_SERVICE_MODE" = "proxy" ]; then
+  FORWARD="-F socks5://127.0.0.1:${WARP_PROXY_PORT}"
+fi
+
+# 单协议: 统一用 PROXY_PORT
+# 双协议: SOCKS5 用 PROXY_PORT, SS 用 SS_PORT
+case "$PROXY_TYPE" in
+  socks5)
+    echo "Starting gost: socks5://:${PROXY_PORT}"
+    exec /usr/local/bin/gost -L "socks5://:${PROXY_PORT}" ${FORWARD}
+    ;;
+  ss)
+    if [ -z "$SS_PASSWORD" ]; then
+      echo "ERROR: SS_PASSWORD is required for Shadowsocks mode"
+      exit 1
+    fi
+    echo "Starting gost: ss://:${PROXY_PORT}"
+    exec /usr/local/bin/gost -L "ss://${SS_METHOD}:${SS_PASSWORD}@:${PROXY_PORT}" ${FORWARD}
+    ;;
+  socks5+ss)
+    if [ -z "$SS_PASSWORD" ]; then
+      echo "ERROR: SS_PASSWORD is required for Shadowsocks"
+      exit 1
+    fi
+    echo "Starting gost: socks5://:${PROXY_PORT} + ss://:${SS_PORT}"
+    exec /usr/local/bin/gost \
+      -L "socks5://:${PROXY_PORT}" ${FORWARD} \
+      -L "ss://${SS_METHOD}:${SS_PASSWORD}@:${SS_PORT}" ${FORWARD}
+    ;;
+  *)
+    echo "Unsupported PROXY_TYPE: $PROXY_TYPE (use: socks5 / ss / socks5+ss)"
+    exit 1
+    ;;
+esac

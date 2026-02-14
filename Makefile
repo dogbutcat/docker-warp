@@ -4,11 +4,6 @@ IMAGE_NAME := docker-warp
 REMOTE_IMAGE := dogbutcat/warp
 CONTAINER_NAME := test_warp
 
-HTTP_PORT ?= 3000
-HTTPS_PORT ?= 3001
-KCLIENT_PORT ?= 6910
-WEBSOCKET_PORT ?= 6911
-
 build: stop
 	docker buildx build --platform $(PLATFORM) \
 		-t $(IMAGE_NAME) --load .
@@ -37,20 +32,19 @@ test: build
 		-d --name $(CONTAINER_NAME) \
 		-e TZ=Asia/Shanghai \
 		-e WARP_MODE=proxy \
-		-e WARP_PROXY_PORT=1080 \
+		-e WARP_PROXY_PORT=40000 \
 		-e WARP_LICENSE_KEY= \
-		-e CUSTOM_PORT=$(HTTP_PORT) \
-		-p $(HTTP_PORT):$(HTTP_PORT) \
+		-e PROXY_TYPE=socks5 \
+		-e PROXY_PORT=1080 \
+		-p 1080:1080 \
 		--cap-add NET_ADMIN \
 		--cap-add SYS_MODULE \
 		--device /dev/net/tun:/dev/net/tun \
-		-v warp-data:/var/lib/cloudflare-warp \
-		--shm-size 1g \
 		$(IMAGE_NAME)
 
 run: test
 	@echo "Container $(CONTAINER_NAME) started."
-	@echo "Access KasmVNC at http://localhost:$(HTTP_PORT)"
+	@echo "SOCKS5 proxy: socks5://localhost:1080"
 
 logs:
 	docker logs -f $(CONTAINER_NAME)

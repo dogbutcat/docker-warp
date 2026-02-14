@@ -1,0 +1,18 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+# === 运行时目录检查 ===
+mkdir -p /var/lib/cloudflare-warp
+mkdir -p /run/dbus
+rm -f /run/dbus/pid
+
+# === TUN 设备检查 ===
+if [ ! -d /dev/net ]; then
+  mkdir -p /dev/net
+fi
+if [ ! -c /dev/net/tun ]; then
+  mknod /dev/net/tun c 10 200
+  chmod 0666 /dev/net/tun
+fi
+
+echo "Runtime environment initialized"

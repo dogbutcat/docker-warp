@@ -3,7 +3,7 @@ set -euo pipefail
 
 WARP_MDM_ENABLED="${WARP_MDM_ENABLED:-false}"
 WARP_MODE="${WARP_MODE:-proxy}"
-WARP_PROXY_PORT="${WARP_PROXY_PORT:-1080}"
+WARP_PROXY_PORT="${WARP_PROXY_PORT:-40000}"
 WARP_LICENSE_KEY="${WARP_LICENSE_KEY:-}"
 
 # Wait for warp-svc to accept commands.
@@ -19,19 +19,21 @@ if ! warp-cli --accept-tos status >/dev/null 2>&1; then
   exit 1
 fi
 
-# MDM 模式：由 mdm.xml 控制注册和配置，无需额外操作
+# MDM 模式：由 mdm.xml 控制注册和配置，等待自动注册完成
 if [ "$WARP_MDM_ENABLED" = "true" ]; then
-  echo "MDM deployment mode enabled, configuration managed by mdm.xml"
-  # 等待 MDM 自动注册完成
-  for i in $(seq 1 30); do
-    if warp-cli --accept-tos registration show >/dev/null 2>&1; then
+  echo "MDM deployment mode enabled, waiting for service token registration..."
+  for i in $(seq 1 90); do
+    REG_STATUS=$(warp-cli --accept-tos registration show 2>&1) || true
+    if echo "$REG_STATUS" | grep -qi "organization\|account\|team"; then
       echo "MDM registration successful"
       warp-cli --accept-tos connect
       exit 0
     fi
+    echo "Waiting for MDM registration... (${i}/90)"
     sleep 2
   done
-  echo "MDM registration pending, please check your service token configuration"
+  echo "WARNING: MDM registration not completed after 180s, please check service token config"
+  echo "Container will keep running, warp-svc may complete registration later"
   exit 0
 fi
 
@@ -60,5 +62,5 @@ if [ -n "$WARP_LICENSE_KEY" ]; then
   warp-cli --accept-tos connect
 else
   echo "No WARP_LICENSE_KEY or MDM provided, skipping auto-registration."
-  echo "Please register manually via warp-taskbar or warp-cli."
+  echo "Register manually: docker exec <container> warp-cli --accept-tos registration new"
 fi
