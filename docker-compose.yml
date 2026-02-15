@@ -14,8 +14,8 @@ services:
       # - WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
       # - WARP_MODE=proxy                 # warp / doh / warp+doh / dot / warp+dot / proxy / tunnel_only
       # - WARP_PROXY_PORT=40000            # WARP proxy 模式内部监听端口
-      # ========== 代理配置 ==========
-      # - PROXY_TYPE=socks5               # socks5 / ss / socks5+ss
+      # ========== 代理配置 (可选，不设则不启动 gost 代理) ==========
+      # - PROXY_TYPE=socks5               # socks5 / ss / socks5+ss / 不设或 none 则禁用
       # - PROXY_PORT=1080                 # 外部代理端口
       # --- Shadowsocks (仅 ss / socks5+ss 模式) ---
       # - SS_PASSWORD=your-password       # SS 密码 (必填)

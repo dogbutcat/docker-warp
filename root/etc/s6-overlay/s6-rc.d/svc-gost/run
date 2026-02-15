@@ -1,7 +1,14 @@
 #!/command/with-contenv bash
 set -euo pipefail
 
-PROXY_TYPE="${PROXY_TYPE:-socks5}"
+PROXY_TYPE="${PROXY_TYPE:-}"
+
+# 未设置 PROXY_TYPE 或设为 none 时不启动 gost
+if [ -z "$PROXY_TYPE" ] || [ "$PROXY_TYPE" = "none" ]; then
+  echo "PROXY_TYPE not set or 'none', gost proxy disabled"
+  exec sleep infinity
+fi
+
 PROXY_PORT="${PROXY_PORT:-1080}"
 WARP_MODE="${WARP_MODE:-}"
 WARP_SERVICE_MODE="${WARP_SERVICE_MODE:-}"

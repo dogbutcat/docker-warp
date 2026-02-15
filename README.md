@@ -10,23 +10,37 @@
 
 纯 CLI 容器，基于 `debian:bookworm-slim` + s6-overlay，集成 Cloudflare WARP + gost 代理。
 
-支持两种工作模式：
-- **裸代理模式**：不配置 WARP，gost 作为独立 SOCKS5/SS 代理，流量从服务器 IP 直出
-- **WARP 代理模式**：配置 WARP 后，流量经 Cloudflare 网络出去
+支持三种工作模式：
+- **纯 WARP 模式**：不设 `PROXY_TYPE`，只运行 WARP 客户端，不启动 gost 代理
+- **裸代理模式**：设 `PROXY_TYPE` 但不配置 WARP，gost 作为独立 SOCKS5/SS 代理，流量从服务器 IP 直出
+- **WARP + 代理模式**：同时配置 WARP 和 `PROXY_TYPE`，流量经 Cloudflare 网络出去
 
-**WARP 模式架构**: 外部客户端 → gost (SOCKS5/SS) → warp-svc → Cloudflare 网络
+**WARP + 代理架构**: 外部客户端 → gost (SOCKS5/SS) → warp-svc → Cloudflare 网络
 
 ## 快速开始
+
+### 纯 WARP (不启动代理)
+
+```bash
+cp .env.example .env
+# 编辑 .env：
+#   WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
+#   WARP_MODE=warp
+# 不设 PROXY_TYPE，gost 不启动
+docker compose up -d
+```
 
 ### 裸代理 (不走 WARP)
 
 ```bash
 cp .env.example .env
-# 按需修改 PROXY_TYPE / PROXY_PORT 等
+# 编辑 .env：
+#   PROXY_TYPE=socks5
+#   PROXY_PORT=1080
 docker compose up -d
 ```
 
-### 走 WARP (LICENSE_KEY)
+### WARP + 代理 (LICENSE_KEY)
 
 ```bash
 cp .env.example .env
@@ -94,7 +108,7 @@ ports:
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `PROXY_TYPE` | `socks5` | 代理类型: `socks5` / `ss` / `socks5+ss` |
+| `PROXY_TYPE` | - | 代理类型: `socks5` / `ss` / `socks5+ss`。不设或 `none` 则不启动 gost |
 | `PROXY_PORT` | `1080` | 外部代理端口 |
 | `SS_PASSWORD` | - | Shadowsocks 密码 (ss/socks5+ss 必填) |
 | `SS_METHOD` | `chacha20-ietf-poly1305` | SS 加密方式 |
