@@ -8,8 +8,13 @@ WARP_PROXY_PORT="${WARP_PROXY_PORT:-40000}"
 WARP_LICENSE_KEY="${WARP_LICENSE_KEY:-}"
 
 # 判断是否需要 proxy 端口就绪
+# MDM 模式下只看 WARP_SERVICE_MODE，避免 WARP_MODE 空值回退 "proxy" 导致误判
 is_proxy_mode() {
-  [ "$WARP_MODE" = "proxy" ] || [ "$WARP_SERVICE_MODE" = "proxy" ]
+  if [ "$WARP_MDM_ENABLED" = "true" ]; then
+    [ "$WARP_SERVICE_MODE" = "proxy" ]
+  else
+    [ "$WARP_MODE" = "proxy" ]
+  fi
 }
 
 # connect 后等待 proxy 端口就绪

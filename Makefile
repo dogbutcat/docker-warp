@@ -36,6 +36,8 @@ test: build
 		-e WARP_LICENSE_KEY= \
 		-e PROXY_TYPE=socks5 \
 		-e PROXY_PORT=1080 \
+		-e GATEWAY_MODE=true \
+		-e GATEWAY_ROUTES=10.143.0.0/16 \
 		-p 1080:1080 \
 		--cap-add NET_ADMIN \
 		--cap-add SYS_MODULE \

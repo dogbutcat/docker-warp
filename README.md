@@ -4,18 +4,22 @@
 
 | 日期 | 变更内容 | 原因 |
 |------|---------|------|
+| 2026-02-15 22:30 | 新增 Gateway 模式 (LAN 网关)，支持 iptables NAT 转发 + 自定义路由；修复 MDM 模式下 `is_proxy_mode()` 误判导致 init-warp 死循环的 bug | 支持将容器作为局域网网关，其他设备通过此容器访问 WARP 隧道内网段 |
 | 2026-02-13 16:00 | v2.0 重构: 移除 GUI/VNC/ZeroTier，基于 debian:bookworm-slim + s6-overlay；新增 gost 代理层，支持 SOCKS5/Shadowsocks 外部代理 | 精简为纯 CLI 容器，减小镜像体积，增加标准代理协议支持 |
 | 2026-02-12 11:30 | 新增 `.env.example`，compose 改用 `env_file` 引用 | 环境变量管理更清晰 |
 | 2026-02-12 10:30 | 新增 MDM 部署模式，支持 Service Token headless 部署 | 企业级 Zero Trust 场景支持 |
 
 纯 CLI 容器，基于 `debian:bookworm-slim` + s6-overlay，集成 Cloudflare WARP + gost 代理。
 
-支持三种工作模式：
+支持四种工作模式：
 - **纯 WARP 模式**：不设 `PROXY_TYPE`，只运行 WARP 客户端，不启动 gost 代理
 - **裸代理模式**：设 `PROXY_TYPE` 但不配置 WARP，gost 作为独立 SOCKS5/SS 代理，流量从服务器 IP 直出
 - **WARP + 代理模式**：同时配置 WARP 和 `PROXY_TYPE`，流量经 Cloudflare 网络出去
+- **网关模式 (Gateway)**：设 `GATEWAY_MODE=true`，容器作为局域网网关，其他设备将路由指向此容器即可访问 WARP 隧道内的网段
 
 **WARP + 代理架构**: 外部客户端 → gost (SOCKS5/SS) → warp-svc → Cloudflare 网络
+
+**网关架构**: LAN 设备 → 宿主机 → 容器 iptables NAT → CloudflareWARP 接口 → Cloudflare 隧道 → 目标网段
 
 ## 快速开始
 
@@ -184,6 +188,89 @@ services:
 ```
 
 > **参考文档**: [Cloudflare MDM Parameters](https://developers.cloudflare.com/cloudflare-one/connections/connect-devices/warp/deployment/mdm-deployment/parameters/)
+
+### 网关模式 (LAN Gateway)
+
+将容器作为局域网网关，让其他设备通过此容器访问 WARP 隧道内的目标网段。与代理模式平行，任何 WARP 模式 (`warp` / `tunnel_only` / `doh` 等) 均可同时开启。
+
+> **前置条件**：网关模式依赖 CloudflareWARP 隧道接口，WARP 必须运行在隧道模式 (非 `proxy` 模式)。容器需要 `NET_ADMIN` 权限和 `--device /dev/net/tun`。
+
+#### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `GATEWAY_MODE` | `false` | **主开关**，设为 `true` 启用网关转发 |
+| `GATEWAY_ROUTES` | - | 需要路由到 WARP 隧道的目标网段，逗号分隔的 CIDR (如 `10.143.0.0/16,172.16.0.0/12`)。不填则依赖 WARP 自身路由表 |
+
+#### 工作原理
+
+启用后，容器会自动执行：
+1. 开启内核 IP 转发 (`ip_forward=1`)
+2. 等待 CloudflareWARP 接口就绪 (最长 120s)
+3. 添加 `GATEWAY_ROUTES` 指定的网段路由到 CloudflareWARP 接口
+4. 配置 iptables 规则：
+   - `POSTROUTING -o CloudflareWARP -j MASQUERADE` (出口 NAT)
+   - `FORWARD -o CloudflareWARP -j ACCEPT` (放行去程转发)
+   - `FORWARD -i CloudflareWARP -m state --state RELATED,ESTABLISHED -j ACCEPT` (放行回程)
+
+#### 配置示例
+
+**LICENSE_KEY 模式 + 网关：**
+
+```bash
+# .env
+WARP_LICENSE_KEY=xxxxxxxx-xxxxxxxx-xxxxxxxx
+WARP_MODE=warp
+GATEWAY_MODE=true
+GATEWAY_ROUTES=10.143.0.0/16
+```
+
+**MDM 模式 + 网关：**
+
+```bash
+# .env
+WARP_MDM_ENABLED=true
+WARP_ORG=your-team-name
+WARP_AUTH_CLIENT_ID=xxxx.access
+WARP_AUTH_CLIENT_SECRET=xxxx
+WARP_SERVICE_MODE=tunnel_only
+GATEWAY_MODE=true
+GATEWAY_ROUTES=10.143.0.0/16
+```
+
+#### 客户端配置
+
+在需要访问目标网段的 LAN 设备上，将对应网段的路由指向容器宿主机 IP：
+
+```bash
+# Linux / macOS
+sudo ip route add 10.143.0.0/16 via <宿主机IP>
+# 或
+sudo route add -net 10.143.0.0/16 <宿主机IP>
+```
+
+#### 验证
+
+```bash
+# 检查容器内规则是否生效
+docker exec -it warp bash -c '
+echo "=== IP Forward ===" && cat /proc/sys/net/ipv4/ip_forward
+echo "=== NAT rules ===" && iptables -t nat -L POSTROUTING -v -n
+echo "=== FORWARD rules ===" && iptables -L FORWARD -v -n --line-numbers
+echo "=== CloudflareWARP interface ===" && ip link show CloudflareWARP 2>&1
+echo "=== Routes via WARP ===" && ip route | grep CloudflareWARP
+'
+
+# 从客户端测试连通性
+ping <目标网段内的IP>
+traceroute <目标网段内的IP>
+```
+
+**预期输出要点：**
+- `ip_forward` = `1`
+- NAT 表 POSTROUTING 有 `MASQUERADE → CloudflareWARP`
+- FORWARD 链头部有两条 `ACCEPT` 规则 (CloudflareWARP 相关)
+- 路由表有 `GATEWAY_ROUTES` 指定的网段指向 CloudflareWARP
 
 ## Build
 
