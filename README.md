@@ -4,6 +4,7 @@
 
 | 日期 | 变更内容 | 原因 |
 |------|---------|------|
+| 2026-02-15 23:50 | 解耦 svc-gost 与 init-gateway 的 s6 依赖关系，两者改为平行启动 | gateway 失败时不应阻塞 gost 代理启动 |
 | 2026-02-15 22:30 | 新增 Gateway 模式 (LAN 网关)，支持 iptables NAT 转发 + 自定义路由；修复 MDM 模式下 `is_proxy_mode()` 误判导致 init-warp 死循环的 bug | 支持将容器作为局域网网关，其他设备通过此容器访问 WARP 隧道内网段 |
 | 2026-02-13 16:00 | v2.0 重构: 移除 GUI/VNC/ZeroTier，基于 debian:bookworm-slim + s6-overlay；新增 gost 代理层，支持 SOCKS5/Shadowsocks 外部代理 | 精简为纯 CLI 容器，减小镜像体积，增加标准代理协议支持 |
 | 2026-02-12 11:30 | 新增 `.env.example`，compose 改用 `env_file` 引用 | 环境变量管理更清晰 |
