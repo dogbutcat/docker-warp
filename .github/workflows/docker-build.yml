@@ -9,6 +9,7 @@ on:
       - 'Dockerfile'
       - '.github/workflows/docker-build.yml'
       - 'root/**'
+      - 'warp-speed-test.sh'
 
 env:
   IMAGE_NAME: dogbutcat/warp
