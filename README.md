@@ -4,6 +4,8 @@
 
 | 日期 | 变更内容 | 原因 |
 |------|---------|------|
+| 2026-02-20 00:25 | v3.3.1 优选整合修复：修复 `init-warp/run` nounset 崩溃 bug；补全 `WARP_PROBE_CONCURRENCY` / `WARP_IPV6_SELECTION` 到 Dockerfile、README、.env.example；新增 Makefile 测试目标 (`test-ip-selection`) | 代码审查发现 `set -u` 下 `WARP_OVERRIDE_WARP_ENDPOINT` 未声明会导致脚本崩溃，补全缺失的环境变量文档 |
+| 2026-02-19 17:05 | v3.3 端点优选实现：Go 探测器改为 tunnel/api 双模式，移除 whois 与 get_ip_ranges.sh，新增 `WARP_API_SELECTION_ENABLED` | 根据 implementation_plan v3.3 落地官方网段精确探测与 API 优选开关控制 |
 | 2026-02-15 23:50 | 解耦 svc-gost 与 init-gateway 的 s6 依赖关系，两者改为平行启动 | gateway 失败时不应阻塞 gost 代理启动 |
 | 2026-02-15 22:30 | 新增 Gateway 模式 (LAN 网关)，支持 iptables NAT 转发 + 自定义路由；修复 MDM 模式下 `is_proxy_mode()` 误判导致 init-warp 死循环的 bug | 支持将容器作为局域网网关，其他设备通过此容器访问 WARP 隧道内网段 |
 | 2026-02-13 16:00 | v2.0 重构: 移除 GUI/VNC/ZeroTier，基于 debian:bookworm-slim + s6-overlay；新增 gost 代理层，支持 SOCKS5/Shadowsocks 外部代理 | 精简为纯 CLI 容器，减小镜像体积，增加标准代理协议支持 |
@@ -168,6 +170,41 @@ ports:
 | `WARP_EMERGENCY_SIGNAL_URL` | External Emergency Disconnect URL |
 | `WARP_EMERGENCY_SIGNAL_FINGERPRINT` | Emergency Signal 证书指纹 (SHA-256) |
 | `WARP_EMERGENCY_SIGNAL_INTERVAL` | Emergency Signal 轮询间隔 (秒，最小 30) |
+
+#### Endpoint 优选环境变量 (v3.3)
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `WARP_IP_SELECTION_ENABLED` | `false` | 启用隧道端点优选（Consumer/WireGuard/Masque 自动选择） |
+| `WARP_API_SELECTION_ENABLED` | `false` | 启用 API 端点优选（jdcloud 节点） |
+| `WARP_IPV6_SELECTION` | `false` | 是否包含 IPv6 端点进行优选 |
+| `WARP_PROBE_CONCURRENCY` | `200` | 并发探测数量（降低可减少资源消耗） |
+| `WARP_LOG_LEVEL` | `info` | 优选日志级别：`debug` / `info` / `warn` / `error` |
+
+#### 端点优选使用示例
+
+容器启动时自动优选最快 endpoint，结果通过 s6 环境变量注入后续服务：
+
+```bash
+# .env
+WARP_MDM_ENABLED=true
+WARP_ORG=your-team-name
+WARP_AUTH_CLIENT_ID=xxxx.access
+WARP_AUTH_CLIENT_SECRET=xxxx
+WARP_SERVICE_MODE=warp
+# 启用优选
+WARP_IP_SELECTION_ENABLED=true
+WARP_API_SELECTION_ENABLED=true
+```
+
+启动流程：
+
+1. `init-warp-ip-selection` 调用 `warp-speed-test.sh`，探测最优 endpoint
+2. 结果写入 `/var/run/s6/container_environment/WARP_OVERRIDE_*_ENDPOINT`
+3. **MDM 模式**：`generate-mdm-xml` 自动读取并写入 `mdm.xml`
+4. **LICENSE_KEY 模式**：`init-warp` 通过 `warp-cli set-custom-endpoint` 注入
+
+> **注意**：如果已手动设置 `WARP_OVERRIDE_WARP_ENDPOINT`，优选会跳过，直接使用手动值。
 
 #### MDM 部署示例
 

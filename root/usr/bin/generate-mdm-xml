@@ -9,9 +9,47 @@ if [ "${WARP_MDM_ENABLED:-false}" != "true" ]; then
   exit 0
 fi
 
-# 如果已有 mdm.xml（如用户手动挂载），保留不覆盖
+# 辅助函数：在已有 mdm.xml 中添加或更新一个 string 类型的 key-value
+# 用于将 IP 优选结果注入到用户挂载的 mdm.xml 中
+patch_mdm_string() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+
+  if [ -z "$value" ]; then
+    return 0
+  fi
+
+  if grep -q "<key>${key}</key>" "$file"; then
+    # key 已存在 → 更新下一行的 <string> 值
+    awk -v key="$key" -v val="$value" '
+      /<key>/ && index($0, key) { found=1; print; next }
+      found && /<string>/ { sub(/<string>[^<]*<\/string>/, "<string>" val "</string>"); found=0 }
+      { print }
+    ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+  else
+    # key 不存在 → 插入到 </dict> 之前
+    awk -v key="$key" -v val="$value" '
+      /<\/dict>/ { print "    <key>" key "</key>"; print "    <string>" val "</string>" }
+      { print }
+    ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+  fi
+
+  echo "  ${key} = ${value}"
+}
+
+# 如果已有 mdm.xml（如用户手动挂载），patch endpoint 覆盖后保留
 if [ -f "$MDM_FILE" ]; then
-  echo "Existing mdm.xml found, skipping generation (using mounted file)"
+  echo "Existing mdm.xml found (using mounted file)"
+  # 如果有 endpoint 覆盖变量（来自 IP 优选或用户 ENV），注入到已有 XML
+  if [ -n "${WARP_OVERRIDE_WARP_ENDPOINT:-}" ] || \
+     [ -n "${WARP_OVERRIDE_API_ENDPOINT:-}" ] || \
+     [ -n "${WARP_OVERRIDE_DOH_ENDPOINT:-}" ]; then
+    echo "Patching endpoint overrides into existing mdm.xml..."
+    patch_mdm_string "override_warp_endpoint" "${WARP_OVERRIDE_WARP_ENDPOINT:-}" "$MDM_FILE"
+    patch_mdm_string "override_api_endpoint" "${WARP_OVERRIDE_API_ENDPOINT:-}" "$MDM_FILE"
+    patch_mdm_string "override_doh_endpoint" "${WARP_OVERRIDE_DOH_ENDPOINT:-}" "$MDM_FILE"
+  fi
   exit 0
 fi
 

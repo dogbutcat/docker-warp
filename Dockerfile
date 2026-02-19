@@ -1,3 +1,11 @@
+# ========== Stage 1: Go builder for warp-endpoint-probe ==========
+FROM golang:1.24-alpine AS warp-probe-builder
+ARG TARGETARCH
+COPY warp-endpoint-probe/ /src/
+WORKDIR /src
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /warp-endpoint-probe .
+
+# ========== Stage 2: Main image ==========
 FROM debian:bookworm-slim
 
 SHELL ["/bin/bash", "-c"]
@@ -31,7 +39,7 @@ RUN set -eux; \
     echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
       > /etc/apt/sources.list.d/cloudflare-warp.list; \
     apt-get update; \
-    apt-get install -y --no-install-recommends cloudflare-warp dbus iptables iproute2; \
+    apt-get install -y --no-install-recommends cloudflare-warp dbus iptables iproute2 jq; \
     apt-get clean; rm -rf /var/lib/apt/lists/*
 
 # ---------- gost v3 (SOCKS5 / Shadowsocks) ----------
@@ -41,6 +49,11 @@ RUN set -eux; \
     tar -xzf /tmp/gost.tar.gz -C /tmp gost; \
     install -m 755 /tmp/gost /usr/local/bin/gost; \
     rm -f /tmp/gost /tmp/gost.tar.gz
+
+# ---------- warp-endpoint-probe (from Go builder) ----------
+COPY --from=warp-probe-builder /warp-endpoint-probe /usr/local/bin/warp-endpoint-probe
+COPY warp-speed-test.sh /usr/local/bin/warp-speed-test.sh
+RUN chmod +x /usr/local/bin/warp-endpoint-probe /usr/local/bin/warp-speed-test.sh
 
 COPY root /
 RUN chmod +x /usr/bin/generate-mdm-xml /usr/bin/restart-gost && \
@@ -93,6 +106,13 @@ ENV WARP_OVERRIDE_WARP_ENDPOINT=
 ENV WARP_EMERGENCY_SIGNAL_URL=
 ENV WARP_EMERGENCY_SIGNAL_FINGERPRINT=
 ENV WARP_EMERGENCY_SIGNAL_INTERVAL=
+
+# === IP 优选 ===
+ENV WARP_IP_SELECTION_ENABLED=false
+ENV WARP_API_SELECTION_ENABLED=false
+ENV WARP_IPV6_SELECTION=false
+ENV WARP_LOG_LEVEL=info
+ENV WARP_PROBE_CONCURRENCY=200
 
 # === 网关模式 ===
 ENV GATEWAY_MODE=false

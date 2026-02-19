@@ -49,6 +49,10 @@ services:
       # - WARP_OVERRIDE_API_ENDPOINT=1.2.3.4
       # - WARP_OVERRIDE_DOH_ENDPOINT=1.2.3.4
       # - WARP_OVERRIDE_WARP_ENDPOINT=203.0.113.0:500
+      # --- Endpoint 优选 (v3.3) ---
+      # - WARP_IP_SELECTION_ENABLED=true      # 隧道端点优选
+      # - WARP_API_SELECTION_ENABLED=true     # API 端点优选 (jdcloud)
+      # - WARP_LOG_LEVEL=info                 # debug / info / warn / error
       # --- External Emergency Disconnect ---
       # - WARP_EMERGENCY_SIGNAL_URL=https://192.0.2.1:3333/status/disconnect
       # - WARP_EMERGENCY_SIGNAL_FINGERPRINT=DD4F4806C57A...

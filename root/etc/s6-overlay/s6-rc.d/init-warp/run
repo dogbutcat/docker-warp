@@ -91,6 +91,14 @@ if [ -n "$WARP_LICENSE_KEY" ]; then
       ;;
   esac
 
+  # IP 优选结果注入 (LICENSE_KEY 模式不走 mdm.xml, 需要 warp-cli 设置)
+  if [ -n "$WARP_OVERRIDE_WARP_ENDPOINT" ]; then
+    echo "Setting custom endpoint: ${WARP_OVERRIDE_WARP_ENDPOINT}"
+    warp-cli --accept-tos set-custom-endpoint "$WARP_OVERRIDE_WARP_ENDPOINT" || true
+  fi
+  # 注: API endpoint (override_api_endpoint) 仅在 MDM 模式的 mdm.xml 中生效
+  # LICENSE_KEY 模式下 warp-cli 无对应命令，故不注入
+
   warp-cli --accept-tos connect
   wait_proxy_ready
 else
