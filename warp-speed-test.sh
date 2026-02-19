@@ -10,16 +10,13 @@ WARP_LOG_LEVEL="${WARP_LOG_LEVEL:-info}"
 WARP_OVERRIDE_WARP_ENDPOINT="${WARP_OVERRIDE_WARP_ENDPOINT:-}"
 WARP_OVERRIDE_API_ENDPOINT="${WARP_OVERRIDE_API_ENDPOINT:-}"
 
-CACHE_DIR="/var/lib/cloudflare-warp"
-TUNNEL_CACHE_FILE="${CACHE_DIR}/warp-best-endpoint.json"
-API_CACHE_FILE="${CACHE_DIR}/warp-best-api-endpoint.json"
-CACHE_TTL=259200
-LOG_FILE="${CACHE_DIR}/warp-speed-test.log"
+LOG_DIR="/var/lib/cloudflare-warp"
+LOG_FILE="${LOG_DIR}/warp-speed-test.log"
 PROBE_BIN="/usr/local/bin/warp-endpoint-probe"
 TOTAL_TIMEOUT="3s"
 PROBE_CONCURRENCY="${WARP_PROBE_CONCURRENCY:-200}"
 
-mkdir -p "$CACHE_DIR"
+mkdir -p "$LOG_DIR"
 
 log_level_value() {
   case "$1" in
@@ -53,84 +50,6 @@ log_debug() { log debug "$@"; }
 log_info() { log info "$@"; }
 log_warn() { log warn "$@"; }
 log_error() { log error "$@"; }
-
-cache_get_endpoint() {
-  local cache_file="$1"
-
-  if [ ! -f "$cache_file" ] || [ ! -s "$cache_file" ]; then
-    return 1
-  fi
-
-  local timestamp
-  local ttl
-  local endpoint
-  local now_epoch
-  local cache_epoch
-
-  timestamp=$(jq -r '.timestamp // empty' "$cache_file" 2>/dev/null) || return 1
-  ttl=$(jq -r '.ttl // 259200' "$cache_file" 2>/dev/null) || return 1
-  endpoint=$(jq -r '.endpoint // empty' "$cache_file" 2>/dev/null) || return 1
-
-  if [ -z "$timestamp" ] || [ -z "$endpoint" ]; then
-    return 1
-  fi
-
-  now_epoch=$(date +%s)
-  cache_epoch=$(date -d "$timestamp" +%s 2>/dev/null) || return 1
-
-  if [ $((now_epoch - cache_epoch)) -lt "$ttl" ]; then
-    echo "$endpoint"
-    return 0
-  fi
-
-  return 1
-}
-
-cache_write_tunnel() {
-  local endpoint="$1"
-  local latency_ms="$2"
-  local target="$3"
-  local timestamp
-  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-  cat > "$TUNNEL_CACHE_FILE" <<EOF
-{
-  "endpoint": "${endpoint}",
-  "timestamp": "${timestamp}",
-  "ttl": ${CACHE_TTL},
-  "metadata": {
-    "mode": "tunnel",
-    "target": "${target}",
-    "protocol": "${WARP_TUNNEL_PROTOCOL}",
-    "latency_ms": ${latency_ms:-0},
-    "ip_pool": "${target}"
-  }
-}
-EOF
-  chmod 664 "$TUNNEL_CACHE_FILE"
-}
-
-cache_write_api() {
-  local endpoint="$1"
-  local latency_ms="$2"
-  local timestamp
-  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-  cat > "$API_CACHE_FILE" <<EOF
-{
-  "endpoint": "${endpoint}",
-  "timestamp": "${timestamp}",
-  "ttl": ${CACHE_TTL},
-  "metadata": {
-    "mode": "api",
-    "target": "jdcloud",
-    "latency_ms": ${latency_ms:-0},
-    "ip_pool": "jdcloud"
-  }
-}
-EOF
-  chmod 664 "$API_CACHE_FILE"
-}
 
 infer_tunnel_target() {
   if [ "$WARP_MDM_ENABLED" != "true" ]; then
@@ -187,6 +106,11 @@ run_probe() {
   return 0
 }
 
+# 从 IP:port 中提取纯 IP
+strip_port() {
+  echo "$1" | sed 's/:[0-9]*$//'
+}
+
 select_tunnel_endpoint() {
   if [ "$WARP_IP_SELECTION_ENABLED" != "true" ]; then
     log_info "Tunnel selection disabled"
@@ -196,13 +120,6 @@ select_tunnel_endpoint() {
   if [ -n "$WARP_OVERRIDE_WARP_ENDPOINT" ]; then
     log_info "Manual tunnel endpoint already configured: ${WARP_OVERRIDE_WARP_ENDPOINT}"
     echo "$WARP_OVERRIDE_WARP_ENDPOINT"
-    return 0
-  fi
-
-  local cached
-  if cached=$(cache_get_endpoint "$TUNNEL_CACHE_FILE"); then
-    log_info "Tunnel cache hit: ${cached}"
-    echo "$cached"
     return 0
   fi
 
@@ -216,11 +133,12 @@ select_tunnel_endpoint() {
 
   local endpoint
   local latency
+  local ip_only
   endpoint=$(echo "$probe_output" | cut -d',' -f1)
   latency=$(echo "$probe_output" | cut -d',' -f2)
-  cache_write_tunnel "$endpoint" "$latency" "$target"
-  log_info "Tunnel endpoint selected: ${endpoint} (${latency}ms, target=${target})"
-  echo "$endpoint"
+  ip_only=$(strip_port "$endpoint")
+  log_info "Tunnel endpoint selected: ${ip_only} (from ${endpoint}, ${latency}ms, target=${target})"
+  echo "$ip_only"
 }
 
 select_api_endpoint() {
@@ -235,13 +153,6 @@ select_api_endpoint() {
     return 0
   fi
 
-  local cached
-  if cached=$(cache_get_endpoint "$API_CACHE_FILE"); then
-    log_info "API cache hit: ${cached}"
-    echo "$cached"
-    return 0
-  fi
-
   local probe_output
   if ! probe_output=$(run_probe api); then
     log_warn "API probe failed, soft-fail"
@@ -250,11 +161,12 @@ select_api_endpoint() {
 
   local endpoint
   local latency
+  local ip_only
   endpoint=$(echo "$probe_output" | cut -d',' -f1)
   latency=$(echo "$probe_output" | cut -d',' -f2)
-  cache_write_api "$endpoint" "$latency"
-  log_info "API endpoint selected: ${endpoint} (${latency}ms)"
-  echo "$endpoint"
+  ip_only=$(strip_port "$endpoint")
+  log_info "API endpoint selected: ${ip_only} (from ${endpoint}, ${latency}ms)"
+  echo "$ip_only"
 }
 
 if [ ! -x "$PROBE_BIN" ]; then
