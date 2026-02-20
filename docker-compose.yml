@@ -52,6 +52,8 @@ services:
       # --- Endpoint 优选 (v3.3) ---
       # - WARP_IP_SELECTION_ENABLED=true      # 隧道端点优选
       # - WARP_API_SELECTION_ENABLED=true     # API 端点优选 (jdcloud)
+      # - WARP_PROBE_TIMEOUT=10s              # 优选总最大超时时间 (默认 10s)
+      # - WARP_PROBE_CONCURRENCY=400          # 优选并发连接数 (默认 400)
       # - WARP_LOG_LEVEL=info                 # debug / info / warn / error
       # --- External Emergency Disconnect ---
       # - WARP_EMERGENCY_SIGNAL_URL=https://192.0.2.1:3333/status/disconnect

@@ -4,6 +4,7 @@
 
 | 日期 | 变更内容 | 原因 |
 |------|---------|------|
+| 2026-02-20 | v3.3.2 探针稳定性优化：修复 `connection refused` 大量发生产生的探针全局卡死 bug，延长总体扫描 `WARP_PROBE_TIMEOUT` 至 `10s`，提高并发至 `400` 并缩短单次 TLS 握手最大超时至 `1s` |
 | 2026-02-20 00:25 | v3.3.1 优选整合修复：修复 `init-warp/run` nounset 崩溃 bug；补全 `WARP_PROBE_CONCURRENCY` / `WARP_IPV6_SELECTION` 到 Dockerfile、README、.env.example；新增 Makefile 测试目标 (`test-ip-selection`) | 代码审查发现 `set -u` 下 `WARP_OVERRIDE_WARP_ENDPOINT` 未声明会导致脚本崩溃，补全缺失的环境变量文档 |
 | 2026-02-19 17:05 | v3.3 端点优选实现：Go 探测器改为 tunnel/api 双模式，移除 whois 与 get_ip_ranges.sh，新增 `WARP_API_SELECTION_ENABLED` | 根据 implementation_plan v3.3 落地官方网段精确探测与 API 优选开关控制 |
 | 2026-02-15 23:50 | 解耦 svc-gost 与 init-gateway 的 s6 依赖关系，两者改为平行启动 | gateway 失败时不应阻塞 gost 代理启动 |

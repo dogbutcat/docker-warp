@@ -46,7 +46,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), totalTimeout)
 	defer cancel()
 
-	results := RunProbes(ctx, endpoints, *concurrency, 2*time.Second)
+	results := RunProbes(ctx, endpoints, *concurrency, time.Second)
 	SortProbeResults(results)
 
 	if err := writeCSV(*outputFile, results); err != nil {
