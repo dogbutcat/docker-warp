@@ -2,13 +2,15 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"time"
+
+	utls "github.com/refraction-networking/utls"
 )
 
 // ProbeHTTPSHandshake measures dial + TLS handshake latency on TCP/443.
+// Uses uTLS with Chrome fingerprint to bypass DPI/GFW SNI detection.
 func ProbeHTTPSHandshake(ctx context.Context, endpoint Endpoint, timeout time.Duration) (time.Duration, error) {
 	if timeout <= 0 {
 		timeout = 2 * time.Second
@@ -23,26 +25,30 @@ func ProbeHTTPSHandshake(ctx context.Context, endpoint Endpoint, timeout time.Du
 	}
 
 	dialer := &net.Dialer{Timeout: timeout}
-	tlsConfig := &tls.Config{
+
+	// 1. 建立底层 TCP 连接
+	start := time.Now()
+	tcpConn, err := dialer.DialContext(probeCtx, "tcp", endpoint.Address())
+	if err != nil {
+		return 0, fmt.Errorf("tcp dial %s: %w", endpoint.Address(), err)
+	}
+
+	// 2. 构造 uTLS 配置并注入目标 SNI
+	tlsConfig := &utls.Config{
 		ServerName:         serverName,
 		InsecureSkipVerify: true,
 	}
 
-	start := time.Now()
-	conn, err := tls.DialWithDialer(dialer, "tcp", endpoint.Address(), tlsConfig)
-	if err != nil {
-		return 0, fmt.Errorf("https handshake %s: %w", endpoint.Address(), err)
+	// 3. 包装 TCP 连接，贴上 Chrome 浏览器的 TLS 指纹特征
+	uConn := utls.UClient(tcpConn, tlsConfig, utls.HelloChrome_Auto)
+
+	// 4. 触发伪装握手
+	if err := uConn.HandshakeContext(probeCtx); err != nil {
+		_ = tcpConn.Close()
+		return 0, fmt.Errorf("utls handshake %s: %w", endpoint.Address(), err)
 	}
 	latency := time.Since(start)
-	_ = conn.Close()
-
-	select {
-	case <-probeCtx.Done():
-		if probeCtx.Err() != nil {
-			return 0, probeCtx.Err()
-		}
-	default:
-	}
+	_ = uConn.Close()
 
 	return latency, nil
 }
