@@ -11,30 +11,48 @@ if [ "$WARP_IP_SELECTION_ENABLED" != "true" ] && [ "$WARP_API_SELECTION_ENABLED"
   exit 0
 fi
 
-if [ "$WARP_IP_SELECTION_ENABLED" = "true" ] && [ -z "$WARP_OVERRIDE_WARP_ENDPOINT" ]; then
-  BEST_TUNNEL_ENDPOINT="$(warp-speed-test.sh --tunnel 2>/dev/null || true)"
-  BEST_TUNNEL_ENDPOINT="$(echo "${BEST_TUNNEL_ENDPOINT}" | tr -d '[:space:]')"
-  if [ -n "$BEST_TUNNEL_ENDPOINT" ]; then
-    echo "$BEST_TUNNEL_ENDPOINT" > /var/run/s6/container_environment/WARP_OVERRIDE_WARP_ENDPOINT
-    echo "[ip-selection] Tunnel endpoint selected: ${BEST_TUNNEL_ENDPOINT}"
+# ── API 优选 (优先级最高) ──
+# API 优选结果会同时覆盖 WARP_OVERRIDE_API_ENDPOINT 和 WARP_OVERRIDE_WARP_ENDPOINT
+API_SELECTED=""
+if [ "$WARP_API_SELECTION_ENABLED" = "true" ]; then
+  if [ -n "$WARP_OVERRIDE_API_ENDPOINT" ]; then
+    echo "[ip-selection] API endpoint already provided: ${WARP_OVERRIDE_API_ENDPOINT}"
+    API_SELECTED="$WARP_OVERRIDE_API_ENDPOINT"
   else
-    echo "[ip-selection] Tunnel selection soft-failed, keep default endpoint"
+    BEST_API_ENDPOINT="$(warp-speed-test.sh --api 2>/dev/null || true)"
+    BEST_API_ENDPOINT="$(echo "${BEST_API_ENDPOINT}" | tr -d '[:space:]')"
+    if [ -n "$BEST_API_ENDPOINT" ]; then
+      API_SELECTED="$BEST_API_ENDPOINT"
+      echo "[ip-selection] API endpoint selected: ${API_SELECTED}"
+    else
+      echo "[ip-selection] API selection soft-failed"
+    fi
   fi
-elif [ -n "$WARP_OVERRIDE_WARP_ENDPOINT" ]; then
-  echo "[ip-selection] Tunnel endpoint already provided: ${WARP_OVERRIDE_WARP_ENDPOINT}"
 fi
 
-if [ "$WARP_API_SELECTION_ENABLED" = "true" ] && [ -z "$WARP_OVERRIDE_API_ENDPOINT" ]; then
-  BEST_API_ENDPOINT="$(warp-speed-test.sh --api 2>/dev/null || true)"
-  BEST_API_ENDPOINT="$(echo "${BEST_API_ENDPOINT}" | tr -d '[:space:]')"
-  if [ -n "$BEST_API_ENDPOINT" ]; then
-    echo "$BEST_API_ENDPOINT" > /var/run/s6/container_environment/WARP_OVERRIDE_API_ENDPOINT
-    echo "[ip-selection] API endpoint selected: ${BEST_API_ENDPOINT}"
+# 如果 API 有结果，同时写入两个 env
+if [ -n "$API_SELECTED" ]; then
+  echo "$API_SELECTED" > /var/run/s6/container_environment/WARP_OVERRIDE_API_ENDPOINT
+  echo "$API_SELECTED" > /var/run/s6/container_environment/WARP_OVERRIDE_WARP_ENDPOINT
+  echo "[ip-selection] Applied API endpoint to both API and Tunnel: ${API_SELECTED}"
+  exit 0
+fi
+
+# ── Tunnel 优选 (仅在 API 未命中时 fallback) ──
+if [ "$WARP_IP_SELECTION_ENABLED" = "true" ]; then
+  if [ -n "$WARP_OVERRIDE_WARP_ENDPOINT" ]; then
+    echo "[ip-selection] Tunnel endpoint already provided: ${WARP_OVERRIDE_WARP_ENDPOINT}"
   else
-    echo "[ip-selection] API selection soft-failed, keep default endpoint"
+    BEST_TUNNEL_ENDPOINT="$(warp-speed-test.sh --tunnel 2>/dev/null || true)"
+    BEST_TUNNEL_ENDPOINT="$(echo "${BEST_TUNNEL_ENDPOINT}" | tr -d '[:space:]')"
+    if [ -n "$BEST_TUNNEL_ENDPOINT" ]; then
+      echo "$BEST_TUNNEL_ENDPOINT" > /var/run/s6/container_environment/WARP_OVERRIDE_WARP_ENDPOINT
+      echo "[ip-selection] Tunnel endpoint selected: ${BEST_TUNNEL_ENDPOINT}"
+    else
+      echo "[ip-selection] Tunnel selection soft-failed, keep default endpoint"
+    fi
   fi
-elif [ -n "$WARP_OVERRIDE_API_ENDPOINT" ]; then
-  echo "[ip-selection] API endpoint already provided: ${WARP_OVERRIDE_API_ENDPOINT}"
 fi
 
 exit 0
+
