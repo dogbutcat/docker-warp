@@ -1,7 +1,7 @@
 VERSION := $(shell cat VERSION)
 PLATFORM ?= linux/amd64
 IMAGE_NAME := docker-warp
-REMOTE_IMAGE := dogbutcat/warp
+REMOTE_IMAGE := ghcr.io/dogbutcat/warp
 CONTAINER_NAME := test_warp
 
 build: stop
