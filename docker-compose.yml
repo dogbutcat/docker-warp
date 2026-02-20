@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   warp:
-    image: dogbutcat/warp
+    image: ghcr.io/dogbutcat/warp
     container_name: warp
     restart: unless-stopped
     env_file:

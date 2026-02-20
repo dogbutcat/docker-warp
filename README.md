@@ -211,7 +211,7 @@ WARP_API_SELECTION_ENABLED=true
 ```yaml
 services:
   warp:
-    image: dogbutcat/warp
+    image: ghcr.io/dogbutcat/warp
     environment:
       - WARP_MDM_ENABLED=true
       - WARP_ORG=your-team-name
