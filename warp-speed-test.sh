@@ -13,8 +13,10 @@ WARP_OVERRIDE_API_ENDPOINT="${WARP_OVERRIDE_API_ENDPOINT:-}"
 LOG_DIR="/var/lib/cloudflare-warp"
 LOG_FILE="${LOG_DIR}/warp-speed-test.log"
 PROBE_BIN="/usr/local/bin/warp-endpoint-probe"
-TOTAL_TIMEOUT="${WARP_PROBE_TIMEOUT:-10s}"
+TOTAL_TIMEOUT="${WARP_PROBE_TIMEOUT:-30s}"
 PROBE_CONCURRENCY="${WARP_PROBE_CONCURRENCY:-400}"
+PROBE_ROUNDS="${WARP_PROBE_ROUNDS:-3}"
+PROBE_SAMPLE="${WARP_PROBE_SAMPLE:-0}"
 
 mkdir -p "$LOG_DIR"
 
@@ -69,7 +71,7 @@ run_probe() {
   local csv_file
   csv_file=$(mktemp /tmp/warp-probe.XXXXXX.csv)
 
-  local command=("$PROBE_BIN" "-mode" "$mode" "-n" "$PROBE_CONCURRENCY" "-timeout" "$TOTAL_TIMEOUT" "-o" "$csv_file")
+  local command=("$PROBE_BIN" "-mode" "$mode" "-n" "$PROBE_CONCURRENCY" "-timeout" "$TOTAL_TIMEOUT" "-rounds" "$PROBE_ROUNDS" "-sample" "$PROBE_SAMPLE" "-o" "$csv_file")
   if [ -n "$target" ]; then
     command+=("-target" "$target")
   fi

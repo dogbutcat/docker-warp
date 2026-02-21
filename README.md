@@ -179,7 +179,10 @@ ports:
 | `WARP_IP_SELECTION_ENABLED` | `false` | 启用隧道端点优选（Consumer/WireGuard/Masque 自动选择） |
 | `WARP_API_SELECTION_ENABLED` | `false` | 启用 API 端点优选（jdcloud 节点） |
 | `WARP_IPV6_SELECTION` | `false` | 是否包含 IPv6 端点进行优选 |
-| `WARP_PROBE_CONCURRENCY` | `200` | 并发探测数量（降低可减少资源消耗） |
+| `WARP_PROBE_TIMEOUT` | `30s` | 优选总最大超时时间（含多轮探测时建议 ≥ 30s） |
+| `WARP_PROBE_CONCURRENCY` | `400` | 并发探测数量（降低可减少资源消耗） |
+| `WARP_PROBE_ROUNDS` | `3` | 每个 Endpoint 探测轮数并取平均延时（设为 1 可恢复旧行为） |
+| `WARP_PROBE_SAMPLE` | `0` | 每 CIDR 采样 IP 数量（0=全量枚举；设为 5 可快速预筛） |
 | `WARP_LOG_LEVEL` | `info` | 优选日志级别：`debug` / `info` / `warn` / `error` |
 
 #### 端点优选使用示例

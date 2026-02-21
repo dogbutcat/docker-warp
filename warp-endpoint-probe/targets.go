@@ -66,7 +66,7 @@ var tunnelTargets = map[string]TargetPool{
 	"masque": {
 		Name:  "masque",
 		CIDRs: []string{"162.159.197.0/24", "2606:4700:102::/48"},
-		Ports: []int{443, 500, 1701, 4500, 4443, 8443, 8095},
+		Ports: []int{443},
 		Probe: ProbeQUIC,
 		SNI:   MasqueSNI,
 	},
@@ -93,7 +93,7 @@ var apiTargets = TargetPool{
 		"220.185.189.128/25", "222.211.66.64/27", "223.85.111.224/27",
 	},
 	Ports: []int{443},
-	Probe: ProbeHTTPS,
+	Probe: ProbeQUIC,
 	SNI:   DefaultSNI,
 }
 
@@ -119,7 +119,9 @@ func SelectPool(mode string, target string, protocol string, mdm bool) (TargetPo
 	}
 }
 
-func ExpandTargets(pool TargetPool, ipv6 bool) ([]Endpoint, error) {
+// ExpandTargets 展开目标池中的所有 IP。
+// samplePerCIDR > 0 时对每个 CIDR 均匀采样而非全量枚举。
+func ExpandTargets(pool TargetPool, ipv6 bool, samplePerCIDR int) ([]Endpoint, error) {
 	if len(pool.Ports) == 0 {
 		return nil, fmt.Errorf("pool %s has no ports", pool.Name)
 	}
@@ -148,11 +150,20 @@ func ExpandTargets(pool TargetPool, ipv6 bool) ([]Endpoint, error) {
 
 	endpoints := make([]Endpoint, 0)
 	for _, cidr := range cidrs {
-		hosts, err := expandCIDRHosts(cidr)
+		var hosts []string
+		var err error
+		if samplePerCIDR > 0 {
+			hosts, err = sampleCIDRHosts(cidr, samplePerCIDR)
+		} else {
+			hosts, err = expandCIDRHosts(cidr)
+		}
 		if err != nil {
 			return nil, err
 		}
 		for _, host := range hosts {
+			if host == "162.159.197.3" {
+				continue // 内部 connectivity test 等保留 IP 予以滤除
+			}
 			for _, port := range pool.Ports {
 				endpoints = append(endpoints, Endpoint{
 					IP:       host,
@@ -166,6 +177,41 @@ func ExpandTargets(pool TargetPool, ipv6 bool) ([]Endpoint, error) {
 		}
 	}
 	return endpoints, nil
+}
+
+// sampleCIDRHosts 从 CIDR 中均匀采样 count 个 IPv4 地址。
+func sampleCIDRHosts(cidr string, count int) ([]string, error) {
+	ip, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, fmt.Errorf("parse cidr %s: %w", cidr, err)
+	}
+	ipv4 := ip.To4()
+	if ipv4 == nil {
+		// IPv6 采样走原有的 sampleIPv6Hosts
+		ones, bits := ipNet.Mask.Size()
+		return sampleIPv6Hosts(ipNet, bits-ones, 0)
+	}
+	ones, bits := ipNet.Mask.Size()
+	hostBits := bits - ones
+	if hostBits <= 1 {
+		return nil, nil
+	}
+	base := binary.BigEndian.Uint32(ipv4)
+	hostCount := int(uint32(1<<hostBits) - 2)
+	if count > hostCount {
+		count = hostCount
+	}
+	step := hostCount / count
+	if step < 1 {
+		step = 1
+	}
+	hosts := make([]string, 0, count)
+	for i := 1; len(hosts) < count && i <= hostCount; i += step {
+		var buf [4]byte
+		binary.BigEndian.PutUint32(buf[:], base+uint32(i))
+		hosts = append(hosts, net.IPv4(buf[0], buf[1], buf[2], buf[3]).String())
+	}
+	return hosts, nil
 }
 
 // IPv6 大段随机采样上限
@@ -186,7 +232,7 @@ func expandCIDRHosts(cidr string) ([]string, error) {
 	if bits == 32 {
 		return expandIPv4Hosts(ip.To4(), hostBits)
 	}
-	return sampleIPv6Hosts(ipNet, hostBits)
+	return sampleIPv6Hosts(ipNet, hostBits, 0)
 }
 
 func expandIPv4Hosts(ipv4 net.IP, hostBits int) ([]string, error) {
@@ -201,10 +247,15 @@ func expandIPv4Hosts(ipv4 net.IP, hostBits int) ([]string, error) {
 	return hosts, nil
 }
 
-func sampleIPv6Hosts(ipNet *net.IPNet, hostBits int) ([]string, error) {
+func sampleIPv6Hosts(ipNet *net.IPNet, hostBits int, count int) ([]string, error) {
 	// 对地址空间取上限
 	hostSpace := new(big.Int).Lsh(big.NewInt(1), uint(hostBits))
+	
 	sampleCount := ipv6SampleSize
+	if count > 0 {
+		sampleCount = count
+	}
+
 	if hostSpace.Cmp(big.NewInt(int64(sampleCount))) < 0 {
 		sampleCount = int(hostSpace.Int64()) - 2
 	}

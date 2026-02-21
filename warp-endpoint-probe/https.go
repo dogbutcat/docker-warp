@@ -44,7 +44,12 @@ func ProbeHTTPSHandshake(ctx context.Context, endpoint Endpoint, timeout time.Du
 
 	// 4. 触发伪装握手
 	if err := uConn.HandshakeContext(probeCtx); err != nil {
+		latency := time.Since(start)
 		_ = tcpConn.Close()
+		// TCP 已连通但 TLS 握手失败 → 服务端有回应，RTT 仍然有效
+		if latency < timeout-50*time.Millisecond {
+			return latency, err
+		}
 		return 0, fmt.Errorf("utls handshake %s: %w", endpoint.Address(), err)
 	}
 	latency := time.Since(start)
