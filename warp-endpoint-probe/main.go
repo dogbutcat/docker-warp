@@ -18,6 +18,7 @@ func main() {
 	rounds := flag.Int("rounds", 3, "Probe rounds per endpoint (average over N rounds)")
 	sampleN := flag.Int("sample", 0, "IPs to sample per CIDR (0=enumerate all)")
 	cidrOpt := flag.String("cidr", "", "Override or add custom CIDR (e.g. 1.2.3.0/24)")
+	sniOpt := flag.String("sni", "", "Override SNI for TLS proxy probes (e.g. zero-trust-client.cloudflareclient.com)")
 	totalTimeoutStr := flag.String("timeout", "30s", "Hard timeout for all probes")
 	outputFile := flag.String("o", "result.csv", "Output CSV file path")
 	flag.Parse()
@@ -49,6 +50,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "ERROR: expanding targets: %v\n", err)
 		os.Exit(2)
 	}
+	if *sniOpt != "" {
+		for i := range endpoints {
+			endpoints[i].SNI = *sniOpt
+		}
+	}
 	fmt.Fprintf(os.Stderr, "Mode=%s Pool=%s Targets=%d Rounds=%d\n", *mode, pool.Name, len(endpoints), *rounds)
 
 	ctx, cancel := context.WithTimeout(context.Background(), totalTimeout)
@@ -56,6 +62,9 @@ func main() {
 
 	results := RunProbes(ctx, endpoints, *concurrency, time.Second, *rounds)
 	SortProbeResults(results)
+
+	// ICMP verification: check top 5 candidates, promote the first that responds
+	results = FilterByICMP(results, 5, 2*time.Second)
 
 	if err := writeCSV(*outputFile, results); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: writing CSV: %v\n", err)

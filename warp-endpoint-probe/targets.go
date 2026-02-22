@@ -93,8 +93,8 @@ var apiTargets = TargetPool{
 		"220.185.189.128/25", "222.211.66.64/27", "223.85.111.224/27",
 	},
 	Ports: []int{443},
-	Probe: ProbeQUIC,
-	SNI:   DefaultSNI,
+	Probe: ProbeHTTPS,
+	SNI:   MasqueSNI,
 }
 
 func SelectPool(mode string, target string, protocol string, mdm bool) (TargetPool, error) {
